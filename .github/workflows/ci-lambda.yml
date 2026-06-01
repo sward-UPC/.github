@@ -1,0 +1,33 @@
+name: CI — Lambda
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        required: false
+        type: string
+        default: "3.11"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python ${{ inputs.python_version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+          cache: "pip"
+
+      - name: Instalar dependencias de desarrollo
+        run: pip install -q -r requirements-dev.txt
+
+      - name: Instalar dependencias
+        run: pip install -q -r requirements.txt
+
+      - name: Lint con ruff
+        run: ruff check . && ruff format --check .
+
+      - name: Tests con cobertura
+        run: pytest tests/ -v --cov=handler --cov-report=term-missing

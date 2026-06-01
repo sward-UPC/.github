@@ -1,0 +1,47 @@
+name: CI — Microservicio
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        required: false
+        type: string
+        default: "3.11"
+      needs_shared:
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python ${{ inputs.python_version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+          cache: "pip"
+
+      - name: Instalar dependencias de desarrollo
+        run: pip install -q -r requirements-dev.txt
+
+      - name: Instalar sward-shared
+        if: ${{ inputs.needs_shared }}
+        run: pip install -q "sward-shared @ git+https://github.com/sward-UPC/sward-shared.git@main"
+
+      - name: Instalar dependencias del servicio
+        run: pip install -q -r requirements.txt
+
+      - name: Lint con ruff
+        run: ruff check src/ tests/ && ruff format --check src/ tests/
+
+      - name: Análisis estático de seguridad (bandit)
+        run: bandit -r src/ --severity-level medium
+
+      - name: Auditoría de dependencias (pip-audit)
+        run: pip-audit || true
+
+      - name: Tests con cobertura
+        run: pytest tests/unit/ -v --cov=src --cov-report=term-missing
