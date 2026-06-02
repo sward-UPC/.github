@@ -7,8 +7,21 @@ on:
         description: "Nombre de la imagen en GHCR (ej: sward-ms-usuarios)"
         required: true
         type: string
+      service_type:
+        description: "Tipo: 'microservice' o 'lambda'"
+        required: true
+        type: string
+      aws_service_name:
+        description: "Nombre del servicio ECS o función Lambda en AWS"
+        required: false
+        type: string
+        default: ""
+      aws_cluster_name:
+        description: "Nombre del cluster ECS (solo microservicios)"
+        required: false
+        type: string
+        default: "sward-cluster"
       python_version:
-        description: "Versión de Python"
         required: false
         type: string
         default: "3.11"
@@ -65,7 +78,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build y Push
+      - name: Build y Push a GHCR
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -73,3 +87,37 @@ jobs:
           tags: ghcr.io/sward-upc/${{ inputs.image_name }}:${{ steps.ts.outputs.ts }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # ─── Deploy a AWS (SEND_TO_AWS=true para activar) ──────────────────────
+
+      - name: Configurar credenciales AWS
+        if: ${{ secrets.SEND_TO_AWS == 'true' && inputs.aws_service_name != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy a ECS (microservicio)
+        if: ${{ secrets.SEND_TO_AWS == 'true' && inputs.service_type == 'microservice' && inputs.aws_service_name != '' }}
+        run: |
+          echo "Deployando ${{ inputs.aws_service_name }} en cluster ${{ inputs.aws_cluster_name }}..."
+          aws ecs update-service \
+            --cluster ${{ inputs.aws_cluster_name }} \
+            --service ${{ inputs.aws_service_name }} \
+            --force-new-deployment \
+            --query 'service.serviceName' \
+            --output text
+          echo "ECS rolling update iniciado"
+
+      - name: Deploy a Lambda
+        if: ${{ secrets.SEND_TO_AWS == 'true' && inputs.service_type == 'lambda' && inputs.aws_service_name != '' }}
+        run: |
+          IMAGE_URI="ghcr.io/sward-upc/${{ inputs.image_name }}:${{ steps.ts.outputs.ts }}"
+          echo "Actualizando Lambda ${{ inputs.aws_service_name }} con imagen $IMAGE_URI..."
+          aws lambda update-function-code \
+            --function-name ${{ inputs.aws_service_name }} \
+            --image-uri $IMAGE_URI \
+            --query 'FunctionName' \
+            --output text
+          echo "Lambda actualizada"
