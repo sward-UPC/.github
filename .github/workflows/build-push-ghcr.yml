@@ -116,7 +116,10 @@ jobs:
         run: |
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
-          ECR_REPO="${ECR_REGISTRY}/sward/${{ inputs.image_name }}"
+          # CDK nombra los repos sin prefijo "sward-": sward/lambda-xxx
+          ECR_NAME="${{ inputs.image_name }}"
+          ECR_NAME="${ECR_NAME#sward-}"
+          ECR_REPO="${ECR_REGISTRY}/sward/${ECR_NAME}"
           TS_TAG="${{ steps.ts.outputs.ts }}"
 
           aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | \
@@ -137,3 +140,4 @@ jobs:
             --function-name ${{ inputs.aws_service_name }} \
             --image-uri ${{ env.ECR_IMAGE_URI }} \
             --query 'FunctionName' --output text
+
