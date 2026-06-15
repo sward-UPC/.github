@@ -80,13 +80,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build y Push a GHCR
+      - name: Build y Push a GHCR (timestamp + latest)
         id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ghcr.io/sward-upc/${{ inputs.image_name }}:${{ steps.ts.outputs.ts }}
+          tags: |
+            ghcr.io/sward-upc/${{ inputs.image_name }}:${{ steps.ts.outputs.ts }}
+            ghcr.io/sward-upc/${{ inputs.image_name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -103,23 +105,35 @@ jobs:
       - name: Deploy a ECS (microservicio)
         if: ${{ env.SEND_TO_AWS == 'true' && inputs.service_type == 'microservice' && inputs.aws_service_name != '' }}
         run: |
-          echo "Deployando ${{ inputs.aws_service_name }} en cluster ${{ inputs.aws_cluster_name }}..."
           aws ecs update-service \
             --cluster ${{ inputs.aws_cluster_name }} \
             --service ${{ inputs.aws_service_name }} \
             --force-new-deployment \
-            --query 'service.serviceName' \
-            --output text
-          echo "ECS rolling update iniciado"
+            --query 'service.serviceName' --output text
 
-      - name: Deploy a Lambda
+      - name: Push imagen Lambda a ECR
         if: ${{ env.SEND_TO_AWS == 'true' && inputs.service_type == 'lambda' && inputs.aws_service_name != '' }}
         run: |
-          IMAGE_URI="ghcr.io/sward-upc/${{ inputs.image_name }}:${{ steps.ts.outputs.ts }}"
-          echo "Actualizando Lambda ${{ inputs.aws_service_name }} con imagen $IMAGE_URI..."
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
+          ECR_REPO="${ECR_REGISTRY}/sward/${{ inputs.image_name }}"
+          TS_TAG="${{ steps.ts.outputs.ts }}"
+
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | \
+            docker login --username AWS --password-stdin $ECR_REGISTRY
+
+          docker pull ghcr.io/sward-upc/${{ inputs.image_name }}:${TS_TAG}
+          docker tag  ghcr.io/sward-upc/${{ inputs.image_name }}:${TS_TAG} ${ECR_REPO}:${TS_TAG}
+          docker tag  ghcr.io/sward-upc/${{ inputs.image_name }}:${TS_TAG} ${ECR_REPO}:latest
+          docker push ${ECR_REPO}:${TS_TAG}
+          docker push ${ECR_REPO}:latest
+
+          echo "ECR_IMAGE_URI=${ECR_REPO}:${TS_TAG}" >> $GITHUB_ENV
+
+      - name: Actualizar Lambda con nueva imagen ECR
+        if: ${{ env.SEND_TO_AWS == 'true' && inputs.service_type == 'lambda' && inputs.aws_service_name != '' }}
+        run: |
           aws lambda update-function-code \
             --function-name ${{ inputs.aws_service_name }} \
-            --image-uri $IMAGE_URI \
-            --query 'FunctionName' \
-            --output text
-          echo "Lambda actualizada"
+            --image-uri ${{ env.ECR_IMAGE_URI }} \
+            --query 'FunctionName' --output text
