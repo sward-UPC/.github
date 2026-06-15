@@ -109,7 +109,8 @@ jobs:
             --cluster ${{ inputs.aws_cluster_name }} \
             --service ${{ inputs.aws_service_name }} \
             --force-new-deployment \
-            --query 'service.serviceName' --output text
+            --query 'service.serviceName' --output text \
+          || echo "Cluster/servicio ECS no existe aún — se desplegará con cdk deploy."
 
       - name: Push imagen Lambda a ECR
         if: ${{ env.SEND_TO_AWS == 'true' && inputs.service_type == 'lambda' && inputs.aws_service_name != '' }}
