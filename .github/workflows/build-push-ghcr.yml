@@ -136,8 +136,11 @@ jobs:
       - name: Actualizar Lambda con nueva imagen ECR
         if: ${{ env.SEND_TO_AWS == 'true' && inputs.service_type == 'lambda' && inputs.aws_service_name != '' }}
         run: |
+          # Si la Lambda aún no existe (primer deploy), CDK la crea con la imagen ECR.
+          # En deploys posteriores este step actualiza el código.
           aws lambda update-function-code \
             --function-name ${{ inputs.aws_service_name }} \
             --image-uri ${{ env.ECR_IMAGE_URI }} \
-            --query 'FunctionName' --output text
+            --query 'FunctionName' --output text \
+          || echo "Lambda no existe aún — se creará con cdk deploy."
 
