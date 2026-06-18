@@ -89,8 +89,11 @@ jobs:
           tags: |
             ghcr.io/sward-upc/${{ inputs.image_name }}:${{ steps.ts.outputs.ts }}
             ghcr.io/sward-upc/${{ inputs.image_name }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Sin caché de capas: garantiza que `pip install` re-resuelva
+          # `sward-shared @ ...@main` (y demás deps) en cada build. Con caché gha,
+          # la capa de pip se reutilizaba y dejaba sward-shared en una versión
+          # vieja (rompió el arranque de trazabilidad: faltaba sward_shared.identidad).
+          no-cache: true
 
       # ─── Deploy a AWS (SEND_TO_AWS=true para activar) ──────────────────────
 
